@@ -1,0 +1,78 @@
+name: Deploy to AWS
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install --no-cache-dir torch==2.5.1+cpu --index-url https://download.pytorch.org/whl/cpu
+          pip install --no-cache-dir -r requirements.txt
+
+      - name: Run tests
+        run: pytest tests/ -v
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t genai-api .
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to AWS via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.AWS_HOST }}
+          username: ${{ secrets.AWS_USER }}
+          key: ${{ secrets.AWS_SSH_KEY }}
+          script: |
+            set -e
+
+            if [ ! -d "${{ secrets.AWS_PROJECT_PATH }}/.git" ]; then
+              rm -rf "${{ secrets.AWS_PROJECT_PATH }}"
+              git clone https://github.com/${{ github.repository }}.git "${{ secrets.AWS_PROJECT_PATH }}"
+            fi
+
+            cd "${{ secrets.AWS_PROJECT_PATH }}"
+            git fetch origin main
+            git reset --hard origin/main
+
+            docker stop genai-api || true
+            docker rm genai-api || true
+
+            docker build -t genai-api .
+
+            docker run -d \
+              --name genai-api \
+              --restart unless-stopped \
+              -p 8000:8000 \
+              -e MODEL_PATH="${{ secrets.MODEL_PATH }}" \
+              -e MODEL_NAME="${{ secrets.MODEL_NAME }}" \
+              -e HF_WEIGHTS_REPO="${{ secrets.HF_WEIGHTS_REPO }}" \
+              -e HF_TOKEN="${{ secrets.HF_TOKEN }}" \
+              genai-api
+
+            sleep 10
+            curl -f http://localhost:8000/health
