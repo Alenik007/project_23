@@ -1,0 +1,14 @@
+# PyTorch: для Linux/Docker см. Dockerfile и README (CPU-индекс уменьшает размер образа).
+fastapi==0.115.12
+uvicorn[standard]==0.34.0
+pydantic==2.13.3
+pytest==8.3.5
+httpx==0.28.1
+requests==2.33.1
+python-dotenv==1.1.0
+huggingface_hub==0.36.2
+transformers==4.46.3
+peft==0.13.2
+accelerate==1.1.1
+safetensors==0.7.0
+sentencepiece==0.2.0

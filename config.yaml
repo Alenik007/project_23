@@ -1,0 +1,82 @@
+seed: 42
+model_name: Qwen/Qwen2.5-1.5B-Instruct
+base_model_revision: main
+
+dataset:
+  raw_sources:
+    - name: ag_news
+      hf_id: ag_news
+      split: train
+      license: MIT
+      url: https://huggingface.co/datasets/ag_news
+    - name: dair_ai_emotion
+      hf_id: dair-ai/emotion
+      split: train
+      license: Apache-2.0
+      url: https://huggingface.co/datasets/dair-ai/emotion
+    - name: yelp_polarity
+      hf_id: yelp_polarity
+      split: train
+      license: unknown
+      url: https://huggingface.co/datasets/yelp_polarity
+    - name: sms_spam
+      hf_id: sms_spam
+      split: train
+      license: CC-BY-4.0
+      url: https://huggingface.co/datasets/sms_spam
+  train_path: data/train.jsonl
+  test_path: data/test.jsonl
+  min_samples: 120
+  test_ratio: 0.18
+  min_test_samples: 20
+
+schema:
+  required_fields:
+    - task_type
+    - label
+    - confidence
+    - evidence
+  allowed_task_types:
+    - topic_classification
+    - emotion_detection
+    - sentiment_detection
+    - spam_detection
+  confidence_values:
+    - low
+    - medium
+    - high
+
+lora:
+  r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+
+training:
+  output_dir: adapters/qwen2.5-1.5b-json-lora
+  learning_rate: 2.0e-4
+  num_train_epochs: 3
+  batch_size: 2
+  gradient_accumulation_steps: 8
+  warmup_steps: 20
+  logging_steps: 10
+  max_seq_length: 768
+  save_strategy: epoch
+
+inference:
+  backend: ollama  # hf | ollama
+  ollama_model: qwen2.5:1.5b-instruct
+  ollama_tuned_model: qwen2.5-json-tuned:latest
+  max_new_tokens: 160
+  temperature: 0.1
+  top_p: 0.9
+  do_sample: false
+
+leakage:
+  method: cosine_embeddings
+  embedding_model: sentence-transformers/all-MiniLM-L6-v2
+  similarity_threshold: 0.86

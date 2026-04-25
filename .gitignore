@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Virtual envs
+.venv/
+.venv-*/
+.venv_*/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Hugging Face / local caches (optional, uncomment if needed)
+# .cache/
+# hf_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# API: секреты и локальные веса (не коммитить)
+.env
+.env.*
+!.env.example
+
+# SSH-ключи и прочие секреты (не коммитить никогда)
+*.pem
+*.ppk
+id_rsa
+id_rsa.pub
+
+fine_tuned_model/*
+!fine_tuned_model/.gitkeep
+!fine_tuned_model/README.md
+
+# Каталог весов в образе: в репо только .gitkeep
+model_weights/*
+!model_weights/.gitkeep
+
+# Крупные/локальные данные (при необходимости уберите из ignore)
+artifacts/
+data/
+
+# Веса моделей / LoRA (не публиковать в публичный репозиторий)
+*.safetensors
+*.pt
+*.pth
+*.ckpt
