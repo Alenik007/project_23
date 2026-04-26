@@ -28,7 +28,9 @@ TOP_P = float(os.getenv("TOP_P", "0.9"))
 DO_SAMPLE = os.getenv("DO_SAMPLE", "false").lower() in ("1", "true", "yes")
 
 # Принудительная заглушка без torch (например, в облегчённых средах).
-USE_STUB = os.getenv("USE_STUB", "").lower() in ("1", "true", "yes")
+# Поддерживается и опечатка USE_STUBS (например, в ручном docker run).
+_USE_STUB_RAW = (os.getenv("USE_STUB") or os.getenv("USE_STUBS", "")).strip()
+USE_STUB = _USE_STUB_RAW.lower() in ("1", "true", "yes")
 
 # Репозиторий HF со снапшотом весов в model_weights/ (см. scripts/download_weights.py).
 HF_WEIGHTS_REPO = os.getenv("HF_WEIGHTS_REPO", "").strip()

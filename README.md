@@ -1,5 +1,5 @@
-# Проект 25. Frontend для ИИ-приложения на React /
-Next.js
+# Project 25 / «Frontend для ИИ-приложения на React /
+Next.js»
 
 ## 1. Название и краткое описание
 
@@ -210,11 +210,21 @@ project_23/
 
 Полный список defaults: `app/config.py`.
 
+### Реальная модель (PeftEngine), а не заглушка
+
+Чтобы **`/generate`** и **`/generate/stream`** отдавали ответ **настоящей** дообученной модели:
+
+1. **`USE_STUB`** (без буквы **«S»** на конце: не `USE_STUBS`) — в `docker run` для **реальной** модели задайте **`-e USE_STUB=0`**. В **GitHub Actions** (`deploy.yml`) для стабильного деплоя без весов на EC2 передаётся **`USE_STUB=1`**; иначе контейнер может не успеть поднять Peft и упасть на health check.
+2. В каталоге **`MODEL_PATH`** (в Docker по умолчанию **`/app/model_weights`**) после старта должны быть файлы LoRA: **`adapter_config.json`** или **`adapter_model.*`**. Пустой каталог → снова **StubEngine**.
+3. **Автозагрузка весов:** задайте **`HF_WEIGHTS_REPO`** (id репозитория HF со снапшотом адаптера) и при необходимости **`HF_TOKEN`**. При старте приложения выполняется **`scripts/download_weights.py`** → `snapshot_download` в **`MODEL_PATH`**.
+4. **Базовая модель** подтягивается с Hugging Face по **`BASE_MODEL_NAME`** / **`BASE_MODEL_REVISION`** (см. `app/config.py`). Первый запуск может быть **долгим**; на **CPU** желательно **≥ 8 GB RAM** на инстансе (для 1.5B + LoRA ориентир, не жёсткий лимит).
+5. **Проверка:** `docker logs genai-api 2>&1 | head -80` — ищите строку вроде *«Движок генерации готов (**PeftEngine**)»*. Если видите *«заглушка»* / *«нет адаптера»* — веса не попали в **`MODEL_PATH`**. Внутри контейнера: `docker exec genai-api ls -la /app/model_weights`.
+
 Потоковый эндпоинт: **`POST /generate/stream`** (тело как у `/generate`, ответ `text/plain`). После деплоя фронта добавьте URL Vercel/Netlify в **`CORS_ORIGINS`** и перезапустите контейнер на AWS.
 
 ## 13. CI/CD и AWS
 
-Файл `.github/workflows/deploy.yml`: **test** (pytest) → **build** (`docker build -t genai-api .`) → **deploy** (SSH: `git pull`, пересборка, `docker run`).
+Файл `.github/workflows/deploy.yml`: **test** (pytest) → **build** (`docker build -t genai-api .`) → **deploy** (SSH: `git pull`, пересборка, `docker run`). В job **deploy** в контейнер передаётся **`USE_STUB=1`**, чтобы деплой на типичном EC2 **не падал** из‑за загрузки полной модели без весов и без GPU; нейтральная заглушка в `app/model.py` при этом остаётся. Когда появятся веса в **`MODEL_PATH`** и достаточно RAM/GPU — на сервере замените на **`USE_STUB=0`** (или поправьте workflow).
 
 На **AWS Ubuntu** (после клонирования в каталог, например `/home/ubuntu/project_23` или `project_24`):
 
@@ -225,9 +235,12 @@ docker stop genai-api 2>/dev/null || true
 docker rm genai-api 2>/dev/null || true
 docker build -t genai-api .
 docker run -d --name genai-api --restart unless-stopped -p 8000:8000 \
+  -e USE_STUB=1 \
   -e MODEL_PATH=/app/model_weights \
   -e MODEL_NAME=local-finetuned-model \
-  -e CORS_ORIGINS="http://localhost:3000,https://ВАШ-ПРОЕКТ.vercel.app" \
+  -e HF_WEIGHTS_REPO=org/your-lora-snapshot-repo \
+  -e HF_TOKEN=hf_xxx \
+  -e CORS_ORIGINS="http://localhost:3000,http://16.16.24.138:3000,https://ВАШ-ПРОЕКТ.vercel.app" \
   genai-api
 curl -f http://localhost:8000/health
 ```
@@ -235,20 +248,25 @@ curl -f http://localhost:8000/health
 Подставьте реальный URL фронта с Vercel в **`CORS_ORIGINS`** (через запятую без пробелов или с пробелами — в `app/config.py` origin обрезаются). Для только локальной разработки достаточно значения по умолчанию `http://localhost:3000`.
 
 ```bash
-# пример без Vercel (только локальный фронт)
+# пример без Vercel (только локальный фронт; USE_STUB=1 — заглушка)
 docker run -d --name genai-api --restart unless-stopped -p 8000:8000 \
+  -e USE_STUB=1 \
   -e MODEL_PATH=/app/model_weights \
   -e MODEL_NAME=local-finetuned-model \
+  -e HF_WEIGHTS_REPO=org/your-lora-snapshot-repo \
+  -e HF_TOKEN=hf_xxx \
   genai-api
 curl -f http://localhost:8000/health
 ```
 
 С внешней машины: `http://AWS_PUBLIC_IP:8000/docs`. В **Security Group** EC2 должны быть разрешены **22** (SSH) и **8000** (HTTP API).
 
-Секреты GitHub: `AWS_HOST`, `AWS_USER`, `AWS_SSH_KEY`, `AWS_PROJECT_PATH`, `MODEL_PATH`, `MODEL_NAME`; опционально `HF_WEIGHTS_REPO`, `HF_TOKEN`.
+Секреты GitHub: `AWS_HOST`, `AWS_USER`, `AWS_SSH_KEY`, `AWS_PROJECT_PATH`, `MODEL_PATH`, `MODEL_NAME`. Для **реальной** модели на сервере задайте **`HF_WEIGHTS_REPO`** (и **`HF_TOKEN`**, если репозиторий приватный); иначе в **`MODEL_PATH`** не появится адаптер и останется заглушка.
 
 ## 14. Известные ограничения
 
+- В `docker run` используйте **`USE_STUB`**; опечатка **`USE_STUBS`** раньше игнорировалась — в **`app/config.py`** теперь учитываются оба имени, но лучше писать **`USE_STUB`**.
+- **Деплой в Actions «Deploy to AWS via SSH»** падает в начале скрипта (`if [ -z "" ]` и т.п.) — проверьте **GitHub Secrets**: `AWS_HOST`, `AWS_USER`, `AWS_SSH_KEY`, **`AWS_PROJECT_PATH`** (полный путь к каталогу на сервере, без пустого значения). Раскройте лог шага и прочитайте последние строки с текстом ошибки.
 - Веса LoRA в публичном репозитории не хранятся (`model_weights/` пустой, только `.gitkeep`); для продакшена задайте `HF_WEIGHTS_REPO` / том с весами.
 - Инференс с `transformers` + `peft` + `torch` требует ресурсов; первый ответ может быть долгим.
 - Rate limit и фильтр injection — **базовый** уровень защиты, не заменяют WAF, аутентификацию и политики на уровне организации.
