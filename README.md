@@ -2,7 +2,7 @@
 
 ## 1. Название и краткое описание
 
-**GenAI API** — FastAPI-сервис для генерации текста дообученной моделью (LoRA). API дополнено базовыми production-механизмами: **ограничение частоты запросов (rate limiting)**, **валидация входных данных (Pydantic)** и **простой фильтр типичных паттернов prompt injection**. Репозиторий собирается в Docker, тестируется в GitHub Actions и может разворачиваться на AWS Ubuntu (SSH).
+**GenAI API** — FastAPI-сервис для генерации текста дообученной моделью (LoRA). API дополнено базовыми production-механизмами: **ограничение частоты запросов (rate limiting)**, **валидация входных данных (Pydantic)**, **простой фильтр типичных паттернов prompt injection**, **CORS** и эндпоинтом **`/generate/stream`** для чата. В **том же репозитории** лежит веб-интерфейс **`ai-chat-frontend/`** (Next.js 14, TypeScript, Tailwind): чат с потоковой подстановкой ответа, историей сессии, **AbortController** (Stop) и деплоем на **Vercel** (подробно — **раздел 16**). Бэкенд собирается в Docker, тестируется в GitHub Actions и разворачивается на **AWS** (публичный URL вместо Railway из формулировки задания).
 
 ## 2. Реализованные механизмы безопасности
 
@@ -37,7 +37,21 @@
 
 В режиме заглушки (`USE_STUB` или отсутствие весов) в `result` будет префикс вида `[stub:…]`; при реальных весах — вывод модели.
 
-## 4. Пример успешного запроса (curl)
+## 4. Потоковый endpoint `POST /generate/stream`
+
+Тело запроса — как у `/generate` (JSON, модель `GenerateRequest`). Успешный ответ — **HTTP 200**, тип **`text/plain; charset=utf-8`**, тело — поток фрагментов текста (на бэкенде сначала считается полный ответ модели, затем он отдаётся **по словам с паузой** — удобно для UI; нативный поток токенов из `transformers` в этом endpoint не используется).
+
+Пример (bash / Git Bash; в PowerShell удобнее `curl.exe`):
+
+```bash
+curl -N -X POST "http://SERVER_IP:8000/generate/stream" \
+  -H "Content-Type: application/json" \
+  -d "{\"prompt\":\"Hello\",\"max_tokens\":256,\"temperature\":0.7}"
+```
+
+Флаг **`-N`** отключает буферизацию, чтобы куски приходили по мере отправки.
+
+## 5. Пример успешного запроса (curl)
 
 ```bash
 curl -X POST "http://SERVER_IP:8000/generate" \
@@ -47,7 +61,7 @@ curl -X POST "http://SERVER_IP:8000/generate" \
 
 Ожидается **HTTP 200** и JSON с полями `result`, `max_tokens`, `temperature`.
 
-## 5. Примеры ошибок
+## 6. Примеры ошибок
 
 ### HTTP 400 — отклонённый промпт (prompt injection)
 
@@ -85,7 +99,7 @@ curl -X POST "http://SERVER_IP:8000/generate" \
 }
 ```
 
-## 6. Паттерны prompt injection (фильтруются)
+## 7. Паттерны prompt injection (фильтруются)
 
 Проверка выполняется по **нижнему регистру** текста промпта; при вхождении **любой** из подстрок запрос отклоняется (**400**):
 
@@ -99,7 +113,7 @@ curl -X POST "http://SERVER_IP:8000/generate" \
 8. `forget previous instructions`
 9. `disregard previous instructions`
 
-## 7. Запуск локально (Python 3.10+)
+## 8. Запуск локально (Python 3.10+)
 
 ```bash
 python -m venv .venv
@@ -115,7 +129,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 Без весов в `MODEL_PATH` сервис поднимается в режиме **заглушки** (`[stub:…]` в ответе).
 
-## 8. Запуск через Docker
+## 9. Запуск через Docker
 
 Сборка (имя образа можно заменить на `project-24` по заданию):
 
@@ -147,16 +161,16 @@ docker run -d -p 8000:8000 --name genai-api ^
   genai-api
 ```
 
-## 9. Запуск тестов
+## 10. Запуск тестов
 
 ```bash
 pip install -r requirements.txt
 pytest tests/ -v
 ```
 
-Файлы: `tests/test_validation.py`, `tests/test_rate_limit.py`, `tests/test_security.py`.
+Файлы: `tests/test_validation.py`, `tests/test_rate_limit.py`, `tests/test_security.py`, `tests/test_stream.py`.
 
-## 10. Структура приложения (целевая схема задания)
+## 11. Структура приложения (целевая схема задания)
 
 ```
 project_23/
@@ -180,7 +194,7 @@ project_23/
 └── README.md
 ```
 
-## 11. Переменные окружения (инференс)
+## 12. Переменные окружения (инференс)
 
 | Переменная | Назначение | Пример |
 |------------|------------|--------|
@@ -197,7 +211,7 @@ project_23/
 
 Потоковый эндпоинт: **`POST /generate/stream`** (тело как у `/generate`, ответ `text/plain`). После деплоя фронта добавьте URL Vercel/Netlify в **`CORS_ORIGINS`** и перезапустите контейнер на AWS.
 
-## 12. CI/CD и AWS
+## 13. CI/CD и AWS
 
 Файл `.github/workflows/deploy.yml`: **test** (pytest) → **build** (`docker build -t genai-api .`) → **deploy** (SSH: `git pull`, пересборка, `docker run`).
 
@@ -212,6 +226,18 @@ docker build -t genai-api .
 docker run -d --name genai-api --restart unless-stopped -p 8000:8000 \
   -e MODEL_PATH=/app/model_weights \
   -e MODEL_NAME=local-finetuned-model \
+  -e CORS_ORIGINS="http://localhost:3000,https://ВАШ-ПРОЕКТ.vercel.app" \
+  genai-api
+curl -f http://localhost:8000/health
+```
+
+Подставьте реальный URL фронта с Vercel в **`CORS_ORIGINS`** (через запятую без пробелов или с пробелами — в `app/config.py` origin обрезаются). Для только локальной разработки достаточно значения по умолчанию `http://localhost:3000`.
+
+```bash
+# пример без Vercel (только локальный фронт)
+docker run -d --name genai-api --restart unless-stopped -p 8000:8000 \
+  -e MODEL_PATH=/app/model_weights \
+  -e MODEL_NAME=local-finetuned-model \
   genai-api
 curl -f http://localhost:8000/health
 ```
@@ -220,19 +246,79 @@ curl -f http://localhost:8000/health
 
 Секреты GitHub: `AWS_HOST`, `AWS_USER`, `AWS_SSH_KEY`, `AWS_PROJECT_PATH`, `MODEL_PATH`, `MODEL_NAME`; опционально `HF_WEIGHTS_REPO`, `HF_TOKEN`.
 
-## 13. Известные ограничения
+## 14. Известные ограничения
 
 - Веса LoRA в публичном репозитории не хранятся (`model_weights/` пустой, только `.gitkeep`); для продакшена задайте `HF_WEIGHTS_REPO` / том с весами.
 - Инференс с `transformers` + `peft` + `torch` требует ресурсов; первый ответ может быть долгим.
 - Rate limit и фильтр injection — **базовый** уровень защиты, не заменяют WAF, аутентификацию и политики на уровне организации.
 
-## 14. Критерии готовности (чеклист сдачи)
+## 15. Критерии готовности (чеклист сдачи)
 
-1. Код в GitHub; README и `requirements.txt` актуальны; Dockerfile собирается.
-2. `pytest tests/` проходит.
-3. API: **200** — корректный запрос; **400** — injection; **422** — валидация; **429** — превышение лимита.
+**Backend**
+
+1. Код в GitHub; корневой README и `requirements.txt` актуальны; Dockerfile собирается.
+2. `pytest tests/` проходит (включая `test_stream.py`).
+3. API: **200** — корректный запрос; **400** — injection; **422** — валидация; **429** — превышение лимита; поток **`/generate/stream`** отдаёт `text/plain`.
 4. Проверка на AWS: `curl http://localhost:8000/docs` на сервере и доступ с браузера по публичному IP.
+5. После появления URL фронта на Vercel — в **`CORS_ORIGINS`** на контейнере API указан этот origin, контейнер перезапущен.
+
+**Frontend (монорепозиторий)**
+
+6. В репозитории есть каталог **`ai-chat-frontend/`** с собственным [README](ai-chat-frontend/README.md); **`npm run lint`** и **`npm run build`** без ошибок; **`.env.local`** не коммитится (есть **`.env.example`**).
+7. На Vercel (или Netlify) задан **`NEXT_PUBLIC_API_URL`** = `http://AWS_PUBLIC_IP:8000` (без завершающего `/`); в проекте Vercel при необходимости указан **Root Directory** `ai-chat-frontend`.
+8. В корневом README или в `ai-chat-frontend/README.md` — ссылки на **задеплоенный фронт**, **backend URL**, при желании **скриншот/GIF** и **ссылку на демо-видео** (30–60 с: чат, streaming, вторая реплика, Stop/Clear, пример ошибки).
+
+## 16. Веб-интерфейс чата (Next.js 14)
+
+Каталог **`ai-chat-frontend/`** — одностраничное приложение (App Router), которое ходит на ваш **FastAPI на AWS** (не Railway).
+
+| Требование задания | Где сделано |
+|--------------------|-------------|
+| Next.js 14+, App Router, TypeScript, Tailwind | `package.json`, `src/app/` |
+| Ввод prompt, отправка на backend, показ ответа | `page.tsx`, `useChat.ts`, `api.ts` |
+| **Streaming** через Fetch + `ReadableStream` + `TextDecoder` | `streamGenerateText` в `src/lib/api.ts` → `POST /generate/stream` |
+| История текущей сессии | state в `useChat.ts` + **sessionStorage** (ключ в коде) |
+| **AbortController** / кнопка Stop | `useChat.ts`, `PromptInput.tsx` |
+| Ошибки 400 / 422 / 429 / 5xx и «backend недоступен» | `useChat.ts` (тексты как в ТЗ) |
+| Markdown для ответов ассистента | `react-markdown` в `MessageBubble.tsx` |
+| URL API из env | **`NEXT_PUBLIC_API_URL`** (`getApiUrl()` в `api.ts`) |
+
+### Локальный запуск фронта
+
+Нужен **Node.js LTS** (в PATH должны быть `node` и `npm`).
+
+```bash
+cd ai-chat-frontend
+cp .env.example .env.local
+# в .env.local: NEXT_PUBLIC_API_URL=http://ВАШ_AWS_IP:8000
+npm install
+npm run dev
+```
+
+Откройте [http://localhost:3000](http://localhost:3000). Бэкенд по умолчанию разрешает origin **`http://localhost:3000`** (`CORS_ORIGINS`).
+
+### Production-сборка фронта
+
+```bash
+cd ai-chat-frontend
+npm run lint
+npm run build
+npm start
+```
+
+### Деплой на Vercel (тот же репо, что и backend)
+
+1. **New Project** → импорт GitHub-репозитория с этим кодом.
+2. **Root Directory** → `ai-chat-frontend`.
+3. **Environment Variables** → `NEXT_PUBLIC_API_URL` = `http://AWS_PUBLIC_IP:8000`.
+4. Deploy → скопируйте URL вида `https://….vercel.app`.
+
+Затем на **AWS** пересоберите и запустите контейнер API с обновлённым **`CORS_ORIGINS`** (см. **раздел 13** выше), включив URL Vercel.
+
+### Документация только по фронту
+
+Полное описание стека, архитектуры, переменных, ошибок и чеклиста видео — в **[ai-chat-frontend/README.md](ai-chat-frontend/README.md)**.
 
 ---
 
-*Ранее использовавшийся пример публичного URL в документации замените на актуальный IP/домен вашего инстанса после деплоя.*
+*Замените `SERVER_IP` / примеры URL в документации на актуальный публичный IP AWS и домен Vercel после деплоя.*
