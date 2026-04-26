@@ -106,7 +106,12 @@ class TextGenerator:
     def info(self) -> ModelInfo:
         return self._info
 
-    def generate(self, user_prompt: str, max_new_tokens: int | None = None) -> tuple[str, int]:
+    def generate(
+        self,
+        user_prompt: str,
+        max_new_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> tuple[str, int]:
         messages: list[dict[str, str]] = []
         if self._system_prompt:
             messages.append({"role": "system", "content": self._system_prompt})
@@ -125,9 +130,10 @@ class TextGenerator:
         inputs = {k: v.to(self._device) for k, v in inputs.items()}
 
         mnt = max_new_tokens if max_new_tokens is not None else self._default_gen_cfg.max_new_tokens
+        temp = self._default_gen_cfg.temperature if temperature is None else float(temperature)
         gen_kwargs = {
             "max_new_tokens": mnt,
-            "temperature": self._default_gen_cfg.temperature,
+            "temperature": temp,
             "top_p": self._default_gen_cfg.top_p,
             "do_sample": self._default_gen_cfg.do_sample,
         }

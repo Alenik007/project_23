@@ -19,7 +19,7 @@ class GenerationEngine(ABC):
     """Единый интерфейс для /generate."""
 
     @abstractmethod
-    def generate(self, prompt: str, max_tokens: int) -> tuple[str, int]:
+    def generate(self, prompt: str, max_tokens: int, temperature: float | None = None) -> tuple[str, int]:
         """Возвращает (текст ответа, число сгенерированных токенов)."""
 
     @property
@@ -35,7 +35,8 @@ class StubEngine(GenerationEngine):
     def model_display_name(self) -> str:
         return config.MODEL_NAME
 
-    def generate(self, prompt: str, max_tokens: int) -> tuple[str, int]:
+    def generate(self, prompt: str, max_tokens: int, temperature: float | None = None) -> tuple[str, int]:
+        _ = temperature
         text = (
             f"[stub:{config.MODEL_NAME}] Краткий ответ на запрос "
             f"(первые символы промпта): {prompt[:120]!r}…"
@@ -56,8 +57,8 @@ class PeftEngine(GenerationEngine):
     def model_display_name(self) -> str:
         return config.MODEL_NAME
 
-    def generate(self, prompt: str, max_tokens: int) -> tuple[str, int]:
-        text, n_new = self._gen.generate(prompt, max_new_tokens=max_tokens)
+    def generate(self, prompt: str, max_tokens: int, temperature: float | None = None) -> tuple[str, int]:
+        text, n_new = self._gen.generate(prompt, max_new_tokens=max_tokens, temperature=temperature)
         return text, max(1, n_new)
 
 

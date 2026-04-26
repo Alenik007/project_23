@@ -1,7 +1,5 @@
 """FastAPI GenAI API: корневой маршрут, health и генерация."""
 
-from __future__ import annotations
-
 import logging
 import os
 import subprocess
@@ -10,10 +8,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field, field_validator
+from fastapi import FastAPI, HTTPException, Request
 
 from app.model import GenerationEngine, load_engine
+from app.models import GenerateRequest, GenerateSuccessResponse
+from app.rate_limiter import limiter, register_rate_limiting
+from app.security import assert_prompt_not_injection
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(_PROJECT_ROOT / ".env")
@@ -63,34 +63,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-
-class GenerateRequest(BaseModel):
-    prompt: str = Field(..., description="Текст запроса, не пустой после trim, до 4096 символов.")
-    max_tokens: int = Field(default=256, ge=1, le=2048, description="Максимум новых токенов.")
-
-    @field_validator("prompt", mode="before")
-    @classmethod
-    def _coerce_str(cls, v: object) -> str:
-        if not isinstance(v, str):
-            raise ValueError("Поле prompt должно быть строкой.")
-        return v
-
-    @field_validator("prompt")
-    @classmethod
-    def _nonempty_and_len(cls, v: str) -> str:
-        s = v.strip()
-        if not s:
-            raise ValueError("Промпт не может быть пустым.")
-        if len(s) > 4096:
-            raise ValueError("Промпт не может быть длиннее 4096 символов.")
-        return s
-
-
-class GenerateResponse(BaseModel):
-    prompt: str
-    response: str
-    model: str
-    tokens_used: int
+register_rate_limiting(app)
 
 
 @app.get("/")
@@ -107,8 +80,13 @@ async def health():
     return {"status": "ok"}
 
 
-@app.post("/generate", response_model=GenerateResponse)
-async def generate(body: GenerateRequest) -> GenerateResponse:
+@app.post("/generate", response_model=GenerateSuccessResponse)
+@limiter.limit("10/minute")
+async def generate(payload: GenerateRequest, request: Request) -> GenerateSuccessResponse:
+    # 1) Pydantic уже проверил тело. 2) Базовая защита от prompt injection. 3) Rate limit.
+    assert_prompt_not_injection(payload.prompt)
+    limiter._check_request_limit(request, generate, in_middleware=False)
+
     engine: GenerationEngine | None = getattr(app.state, "engine", None)
     if engine is None:
         err = getattr(app.state, "load_error", None)
@@ -117,10 +95,13 @@ async def generate(body: GenerateRequest) -> GenerateResponse:
             detail=err or "Сервис не готов.",
         )
 
-    text, tokens_used = engine.generate(body.prompt.strip(), body.max_tokens)
-    return GenerateResponse(
-        prompt=body.prompt.strip(),
-        response=text,
-        model=engine.model_display_name,
-        tokens_used=tokens_used,
+    text, _tokens_used = engine.generate(
+        payload.prompt,
+        payload.max_tokens,
+        temperature=payload.temperature,
+    )
+    return GenerateSuccessResponse(
+        result=text,
+        max_tokens=payload.max_tokens,
+        temperature=payload.temperature,
     )
