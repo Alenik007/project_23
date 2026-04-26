@@ -70,6 +70,7 @@ jobs:
               --name genai-api \
               --restart unless-stopped \
               -p 8000:8000 \
+              -e USE_STUB=1 \
               -e MODEL_PATH="${{ secrets.MODEL_PATH }}" \
               -e MODEL_NAME="${{ secrets.MODEL_NAME }}" \
               -e HF_WEIGHTS_REPO="${{ secrets.HF_WEIGHTS_REPO }}" \
