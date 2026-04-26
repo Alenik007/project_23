@@ -37,9 +37,11 @@ class StubEngine(GenerationEngine):
 
     def generate(self, prompt: str, max_tokens: int, temperature: float | None = None) -> tuple[str, int]:
         _ = temperature
+        n = len(prompt.strip())
         text = (
-            f"[stub:{config.MODEL_NAME}] Краткий ответ на запрос "
-            f"(первые символы промпта): {prompt[:120]!r}…"
+            f"[stub:{config.MODEL_NAME}] Работает заглушка без выгруженных весов модели. "
+            f"Запрос принят ({n} символов). Для ответа настоящей модели задайте MODEL_PATH "
+            f"и веса LoRA (или HF_WEIGHTS_REPO) на сервере; для CI можно оставить USE_STUB=1."
         )
         if max_tokens < len(text):
             text = text[:max_tokens]
