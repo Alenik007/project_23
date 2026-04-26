@@ -9,3 +9,16 @@ venv
 .DS_Store
 .idea
 .vscode
+
+# Монорепо: фронт не копируется в Dockerfile API — не отправлять в контекст сборки (иначе EC2/демон Docker забиваются)
+ai-chat-frontend/node_modules
+ai-chat-frontend/.next
+ai-chat-frontend/out
+ai-chat-frontend/.vercel
+
+# Артефакты обучения / большие каталоги (образ API их не COPY)
+adapters/
+fine_tuned_model/
+notebooks/
+artifacts/
+data/
