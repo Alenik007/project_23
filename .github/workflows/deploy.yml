@@ -49,6 +49,7 @@ jobs:
           host: ${{ secrets.AWS_HOST }}
           username: ${{ secrets.AWS_USER }}
           key: ${{ secrets.AWS_SSH_KEY }}
+          command_timeout: 30m
           script: |
             set -e
 
@@ -77,5 +78,18 @@ jobs:
               -e HF_TOKEN="${{ secrets.HF_TOKEN }}" \
               genai-api
 
-            sleep 10
-            curl -f http://localhost:8000/health
+            sleep 15
+            ok=0
+            for i in 1 2 3 4 5 6 7 8 9 10; do
+              if curl -fsS http://localhost:8000/health; then
+                ok=1
+                break
+              fi
+              echo "Health check attempt $i/10 failed, retry in 5s..."
+              sleep 5
+            done
+            if [ "$ok" != "1" ]; then
+              echo "=== docker logs genai-api (last 100 lines) ==="
+              docker logs genai-api --tail 100 2>&1 || true
+              exit 1
+            fi
