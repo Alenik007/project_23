@@ -8,7 +8,9 @@
 
 | Механизм | Реализация |
 |----------|------------|
-| **Rate limiting** | [slowapi](https://github.com/laurentS/slowapi): не более **10 запросов в минуту на IP** для `POST /generate`; при превышении — **HTTP 429** с полем `detail`. |
+| **Rate limiting** | [slowapi](https://github.com/laurentS/slowapi): не более **10 запросов в минуту на IP** для `POST /generate` и отдельно для `POST /generate/stream`; при превышении — **HTTP 429** с полем `detail`. |
+| **CORS** | `CORSMiddleware`: список origin из переменной **`CORS_ORIGINS`** (через запятую). По умолчанию: `http://localhost:3000`. После деплоя фронта на Vercel добавьте URL вида `https://….vercel.app`. |
+| **Streaming** | `POST /generate/stream` — `text/plain; charset=utf-8`: полный ответ модели затем отдаётся **по словам с паузой** (UX streaming). Нативный поток токенов из `transformers` в этом endpoint **не** используется. |
 | **Pydantic validation** | Модель `GenerateRequest` в `app/models.py`: ограничения по длине и содержимому `prompt`, диапазоны `max_tokens` и `temperature`; ошибки — **HTTP 422**. |
 | **Prompt injection filter** | Функция `assert_prompt_not_injection` в `app/security.py`: нечувствительная к регистру проверка по списку подстрок; при совпадении — **HTTP 400** с сообщением *«Prompt rejected due to suspicious instruction pattern»*. |
 
@@ -21,7 +23,7 @@
 | **prompt** | Обязателен, после `strip` не пустой, максимум **2000** символов. |
 | **max_tokens** | Целое **1–2048**, по умолчанию **256**. |
 | **temperature** | **0.0–2.0**, по умолчанию **0.7**. |
-| **Rate limit** | **10** запросов в минуту на **один IP** (эндпоинт `/generate`). |
+| **Rate limit** | **10** запросов в минуту на **один IP** для каждого из эндпоинтов **`/generate`** и **`/generate/stream`** (отдельные счётчики). |
 
 Успешный ответ (**HTTP 200**), минимальный JSON:
 
@@ -158,6 +160,7 @@ pytest tests/ -v
 
 ```
 project_23/
+├── ai-chat-frontend/     # Next.js 14 чат (см. README внутри каталога)
 ├── app/
 │   ├── main.py
 │   ├── models.py
@@ -170,7 +173,8 @@ project_23/
 │   ├── conftest.py
 │   ├── test_validation.py
 │   ├── test_rate_limit.py
-│   └── test_security.py
+│   ├── test_security.py
+│   └── test_stream.py
 ├── Dockerfile
 ├── requirements.txt
 └── README.md
@@ -187,8 +191,11 @@ project_23/
 | `HF_WEIGHTS_REPO` | Репозиторий HF со снапшотом весов | `org/repo` |
 | `HF_TOKEN` | Токен HF для приватных репозиториев | *(secret)* |
 | `USE_STUB` | `1` / `true` — заглушка без torch | `0` |
+| `CORS_ORIGINS` | Разрешённые origin для браузера (через запятую) | `http://localhost:3000,https://app.vercel.app` |
 
 Полный список defaults: `app/config.py`.
+
+Потоковый эндпоинт: **`POST /generate/stream`** (тело как у `/generate`, ответ `text/plain`). После деплоя фронта добавьте URL Vercel/Netlify в **`CORS_ORIGINS`** и перезапустите контейнер на AWS.
 
 ## 12. CI/CD и AWS
 

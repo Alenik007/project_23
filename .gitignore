@@ -38,6 +38,16 @@ fine_tuned_model/*
 model_weights/*
 !model_weights/.gitkeep
 
+# Next.js (ai-chat-frontend в том же репозитории)
+ai-chat-frontend/node_modules/
+ai-chat-frontend/.next/
+ai-chat-frontend/out/
+ai-chat-frontend/.vercel
+ai-chat-frontend/*.tsbuildinfo
+ai-chat-frontend/npm-debug.log*
+ai-chat-frontend/yarn-debug.log*
+ai-chat-frontend/yarn-error.log*
+
 # Крупные/локальные данные (при необходимости уберите из ignore)
 artifacts/
 data/

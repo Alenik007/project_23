@@ -32,3 +32,11 @@ USE_STUB = os.getenv("USE_STUB", "").lower() in ("1", "true", "yes")
 
 # Репозиторий HF со снапшотом весов в model_weights/ (см. scripts/download_weights.py).
 HF_WEIGHTS_REPO = os.getenv("HF_WEIGHTS_REPO", "").strip()
+
+# CORS: список origin через запятую (например: http://localhost:3000,https://app.vercel.app)
+_DEFAULT_CORS = "http://localhost:3000"
+
+
+def cors_allowed_origins() -> list[str]:
+    raw = os.getenv("CORS_ORIGINS", _DEFAULT_CORS).strip()
+    return [o.strip() for o in raw.split(",") if o.strip()]

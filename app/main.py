@@ -1,15 +1,20 @@
 """FastAPI GenAI API: корневой маршрут, health и генерация."""
 
+import asyncio
 import logging
 import os
 import subprocess
 import sys
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
+from app import config
 from app.model import GenerationEngine, load_engine
 from app.models import GenerateRequest, GenerateSuccessResponse
 from app.rate_limiter import limiter, register_rate_limiting
@@ -65,6 +70,30 @@ app = FastAPI(
 
 register_rate_limiting(app)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=config.cors_allowed_origins(),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+async def _stream_text_as_word_chunks(text: str, delay_sec: float = 0.06) -> AsyncIterator[str]:
+    """Потоковая отдача уже сгенерированного текста по словам (UX streaming).
+
+    Нативный поток токенов из transformers здесь не используется: сначала полный
+    ответ модели, затем нарезка по словам с небольшой паузой.
+    """
+    words = text.split()
+    if not words:
+        if text:
+            yield text
+        return
+    for word in words:
+        yield word + " "
+        await asyncio.sleep(delay_sec)
+
 
 @app.get("/")
 async def root():
@@ -104,4 +133,37 @@ async def generate(payload: GenerateRequest, request: Request) -> GenerateSucces
         result=text,
         max_tokens=payload.max_tokens,
         temperature=payload.temperature,
+    )
+
+
+@app.post("/generate/stream")
+@limiter.limit("10/minute")
+async def generate_stream(payload: GenerateRequest, request: Request) -> StreamingResponse:
+    """Потоковая выдача ответа (text/plain): та же валидация, фильтр и rate limit, что и у /generate."""
+    assert_prompt_not_injection(payload.prompt)
+    limiter._check_request_limit(request, generate_stream, in_middleware=False)
+
+    engine: GenerationEngine | None = getattr(app.state, "engine", None)
+    if engine is None:
+        err = getattr(app.state, "load_error", None)
+        raise HTTPException(
+            status_code=503,
+            detail=err or "Сервис не готов.",
+        )
+
+    text, _tokens_used = await asyncio.to_thread(
+        lambda: engine.generate(
+            payload.prompt,
+            payload.max_tokens,
+            payload.temperature,
+        ),
+    )
+
+    async def body() -> AsyncIterator[str]:
+        async for chunk in _stream_text_as_word_chunks(text):
+            yield chunk
+
+    return StreamingResponse(
+        body(),
+        media_type="text/plain; charset=utf-8",
     )
