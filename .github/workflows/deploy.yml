@@ -67,6 +67,23 @@ jobs:
 
             docker build -t genai-api .
 
+            # Пустой CORS_ORIGINS: иначе только localhost в контейнере → OPTIONS 400. Берём http://AWS_HOST:3000
+            # и (если доступен IMDS) публичный IP — часто в браузере открывают http://IP:3000, а AWS_HOST — DNS.
+            CORS_ORIG="${{ secrets.CORS_ORIGINS }}"
+            if [ -z "$CORS_ORIG" ]; then
+              CORS_ORIG="http://${{ secrets.AWS_HOST }}:3000"
+              TOKEN=$(curl -fsS --max-time 2 -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60" 2>/dev/null || true)
+              if [ -n "$TOKEN" ]; then
+                PUB_IP=$(curl -fsS --max-time 2 -H "X-aws-ec2-metadata-token: $TOKEN" "http://169.254.169.254/latest/meta-data/public-ipv4" 2>/dev/null || true)
+              else
+                PUB_IP=$(curl -fsS --max-time 2 "http://169.254.169.254/latest/meta-data/public-ipv4" 2>/dev/null || true)
+              fi
+              if [ -n "$PUB_IP" ]; then
+                CORS_ORIG="$CORS_ORIG,http://$PUB_IP:3000"
+              fi
+              CORS_ORIG="$CORS_ORIG,http://localhost:3000"
+            fi
+
             docker run -d \
               --name genai-api \
               --restart unless-stopped \
@@ -76,6 +93,7 @@ jobs:
               -e MODEL_NAME="${{ secrets.MODEL_NAME }}" \
               -e HF_WEIGHTS_REPO="${{ secrets.HF_WEIGHTS_REPO }}" \
               -e HF_TOKEN="${{ secrets.HF_TOKEN }}" \
+              -e CORS_ORIGINS="$CORS_ORIG" \
               genai-api
 
             sleep 15
